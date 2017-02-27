@@ -1,0 +1,1 @@
+from .compowsr import app

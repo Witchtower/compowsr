@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+
+{% block content %}
+
+
+
+
+    {% if status.bnet_logged_in %}
+
+        <p>bnet: ok</p>
+
+    {% else %}
+
+        <p>bnet: <a href="{{ url_for('login_bnet') }}">pls login</a></p>
+
+    {% endif %}
+
+
+
+
+    {% if status.reddit_logged_in %}
+
+        <p>reddit: {{ status.reddit_user }}</p>
+
+    {% else %}
+
+        <p>reddit: <a href="{{ url_for('login_reddit') }}">pls login</a></p>
+
+    {% endif %}
+
+
+
+
+{% endblock %}

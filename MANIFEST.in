@@ -1,0 +1,3 @@
+graft compowsr/templates
+graft compowsr/static
+include compowsr/schema.sql
