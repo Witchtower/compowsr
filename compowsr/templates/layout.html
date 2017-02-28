@@ -4,6 +4,11 @@
         <title>compowsr - r/competetiveoverwatch sr flair verification</title>
     </head>
     <body>
+
+        {% for message in get_flashed_messages() %}
+            <div class=flash>{{ message }}</div>
+        {% endfor %}
+
         {% block content %}
         {% endblock %}
     </body>

@@ -12,6 +12,7 @@
 
 import os
 import sqlite3
+import json
 import requests
 import requests.auth
 from flask import Flask, request, session, g, redirect, url_for, abort, \
@@ -87,9 +88,9 @@ def show_status():
 
     return render_template('show_status.html', status={
         'bnet_logged_in': bnet_logged_in, 
-        'bnet_user_name': bnet_user,
+        'bnet_user': bnet_user,
         'reddit_logged_in': reddit_logged_in,
-        'reddit_user_name': reddit_user
+        'reddit_user': reddit_user
         })
 
 
@@ -107,6 +108,7 @@ def login_reddit():
     from uuid import uuid4
     # we need to save the state somewhere for future use
     state = str(uuid4())
+    session['reddit_oauth_state'] = state
     params = {
         'client_id': app.config['REDDIT_CLIENT_ID'],
         'response_type': 'code',
@@ -130,12 +132,15 @@ def callback_reddit():
         abort(403)
     code = request.args.get('code')
     token = reddit_access_token_from_code(code)
-    #session['reddit_token'] = token
+    if token: 
+        session['reddit_token'] = token
     return 'yay we got a code: %s\n and a token from the code: %s' % (code, token)
 
 def is_valid_state(state):
     # haha jokes on me, this need to be done but for testing should work with return True
-    return True
+    if state == session.get('reddit_oauth_state'):
+        return True
+    return False
 
 def reddit_access_token_from_code(code):
     client_auth = requests.auth.HTTPBasicAuth(app.config['REDDIT_CLIENT_ID'], app.config['REDDIT_CLIENT_SECRET'])
@@ -148,16 +153,16 @@ def reddit_access_token_from_code(code):
     token_json = response.json()
     if token_json.has_key('access_token'):
         return token_json['access_token']
-    flash(token_json['message'])
+    return None
 
 def reddit_get_username(token):
     headers = {
         'Authorization': 'bearer ' + token
     }
     response = requests.get('https://oauth.reddit.com/api/v1/me', headers=headers)
-    # me_json = response.json()
-    # return me_json['name']
-    return response.status_code
+    me_json = json.loads(response.text)
+    return me_json['name']
+    #return response.content
 
 
 
