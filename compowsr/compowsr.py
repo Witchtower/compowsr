@@ -32,7 +32,7 @@ app.config.update(dict(
     PASSWORD='fnord',
     REDDIT_CLIENT_ID='',
     REDDIT_CLIENT_SECRET='',
-    REDDIT_REDIRECT_URI='http://127.0.0.1:5000/callback_reddit'
+    REDDIT_REDIRECT_URI='https://127.0.0.1:5000/callback_reddit'
 ))
 
 # overwrite config from environment vars if they've been set 
@@ -80,7 +80,7 @@ def show_status():
 
     if session.get('reddit_token') and not session.get('reddit_user'):
         try:
-            user = reddit_get_username(session.get('reddit_token'))
+            user = reddit_get_user(session.get('reddit_token'))
             session['reddit_user'] = user['name'] 
             session['reddit_user_id'] = user['id']
         except:
@@ -94,6 +94,7 @@ def show_status():
         True
 
     return render_template('show_status.html', status={
+        'session_dump': str(session),
         'bnet_user': session.get('bnet_user'),
         'reddit_user': session.get('reddit_user')
         })
@@ -165,12 +166,9 @@ def reddit_get_user(token):
         'Authorization': 'bearer ' + token
     }
     response = requests.get('https://oauth.reddit.com/api/v1/me', headers=headers)
+    open('log.txt', 'a').write(response.text)
     me_json = json.loads(response.text)
-    with open('log.txt', 'a') as logf:
-        logf.write(response.text)
-    while 1:
-        yield me_json
-    #return response.content
+    return me_json
 
 
 
