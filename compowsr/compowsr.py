@@ -74,23 +74,28 @@ def initdb_command():
 
 @app.route('/', methods=['GET'])
 def show_status():
-    bnet_logged_in = False
-    bnet_user = ""
-    reddit_logged_in = False
-    reddit_user = ""
-    if session.get('bnet_token'):
-        bnet_logged_in = True
-    if session.get('reddit_token'):
-        reddit_user = reddit_get_username(session.get('reddit_token'))
-        if reddit_user:
-            reddit_logged_in = True
 
+    if session.get('bnet_token') and not session.get('bnet_user'):
+        True
+
+    if session.get('reddit_token') and not session.get('reddit_user'):
+        try:
+            user = reddit_get_username(session.get('reddit_token'))
+            session['reddit_user'] = user['name'] 
+            session['reddit_user_id'] = user['id']
+        except:
+            session['reddit_user'] = None
+
+    if session.get('reddit_user') and session.get('reddit_user_id') \
+    and session.get('bnet_user') and session.get('bnet_user_id'):
+        # if we have both handles 
+        # write them to the database
+        # and get the skill rank from playoverwatch
+        True
 
     return render_template('show_status.html', status={
-        'bnet_logged_in': bnet_logged_in, 
-        'bnet_user': bnet_user,
-        'reddit_logged_in': reddit_logged_in,
-        'reddit_user': reddit_user
+        'bnet_user': session.get('bnet_user'),
+        'reddit_user': session.get('reddit_user')
         })
 
 
@@ -134,7 +139,7 @@ def callback_reddit():
     token = reddit_access_token_from_code(code)
     if token: 
         session['reddit_token'] = token
-    return 'yay we got a code: %s\n and a token from the code: %s' % (code, token)
+    return redirect(url_for('show_status'))
 
 def is_valid_state(state):
     # haha jokes on me, this need to be done but for testing should work with return True
@@ -155,13 +160,16 @@ def reddit_access_token_from_code(code):
         return token_json['access_token']
     return None
 
-def reddit_get_username(token):
+def reddit_get_user(token):
     headers = {
         'Authorization': 'bearer ' + token
     }
     response = requests.get('https://oauth.reddit.com/api/v1/me', headers=headers)
     me_json = json.loads(response.text)
-    return me_json['name']
+    with open('log.txt', 'a') as logf:
+        logf.write(response.text)
+    while 1:
+        yield me_json
     #return response.content
 
 
