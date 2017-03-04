@@ -30,9 +30,14 @@ app.config.update(dict(
     SECRET_KEY='fnord',
     USERNAME='fnord',
     PASSWORD='fnord',
+
     REDDIT_CLIENT_ID='',
     REDDIT_CLIENT_SECRET='',
-    REDDIT_REDIRECT_URI='https://127.0.0.1:5000/callback_reddit'
+    REDDIT_REDIRECT_URI='https://localhost:5000/callback_reddit',
+
+    BNET_CLIENT_ID='',
+    BNET_CLIENT_SECRET='',
+    BNET_REDIRECT_URI='https://localhost:5000/callback_bnet'
 ))
 
 # overwrite config from environment vars if they've been set 
@@ -76,7 +81,12 @@ def initdb_command():
 def show_status():
 
     if session.get('bnet_token') and not session.get('bnet_user'):
-        True
+        try:
+            user = bnet_get_user(session.get('bnet_token'))
+            session['bnet_user'] = user['battletag']
+            session['bnet_user_id'] = user['id']
+        except:
+            session['bnet_user'] = None
 
     if session.get('reddit_token') and not session.get('reddit_user'):
         try:
@@ -89,8 +99,8 @@ def show_status():
     if session.get('reddit_user') and session.get('reddit_user_id') \
     and session.get('bnet_user') and session.get('bnet_user_id'):
         # if we have both handles 
-        # write them to the database
-        # and get the skill rank from playoverwatch
+        # get the skill rank from playoverwatch
+        # and write them to the database
         True
 
     return render_template('show_status.html', status={
@@ -107,7 +117,55 @@ def logout():
 
 @app.route('/login_bnet')
 def login_bnet():
-    True
+    from uuid import uuid4
+    state = str(uuid4())
+    session['bnet_oauth_state'] = state
+    params = {
+        'client_id': app.config['BNET_CLIENT_ID'],
+        'state': state,
+        'redirect_uri': app.config['BNET_REDIRECT_URI'],
+        'response_type': 'code',
+        'auth_flow': 'auth_code'
+    }
+    import urllib
+    redir_url = 'https://eu.battle.net/oauth/authorize?' + urllib.urlencode(params)
+    return redirect(redir_url)
+
+@app.route('/callback_bnet')
+def callback_bnet():
+    error = request.args.get('error', '')
+    if error:
+        return "Error: " + error
+    state = request.args.get('state','')
+    if not session.get('bnet_oauth_state') == state:
+        abort(403)
+    code = request.args.get('code')
+    token = bnet_access_token_from_code(code)
+    if token:
+        session['bnet_token'] = token
+    return redirect(url_for('show_status'))
+
+def bnet_access_token_from_code(code):
+    client_auth = requests.auth.HTTPBasicAuth(app.config['BNET_CLIENT_ID'], app.config['BNET_CLIENT_SECRET'])
+    post_data = {
+        'grant_type': 'authorization_code',
+        'scope': '',
+        'code': code,
+        'redirect_uri': app.config['BNET_REDIRECT_URI']
+    }
+    response = requests.post('https://eu.battle.net/oauth/token', auth=client_auth, data=post_data)
+    token_json = response.json()
+    if token_json.has_key('access_token'):
+        return token_json['access_token']
+    return None
+
+def bnet_get_user(token):
+    response = requests.get('https://eu.api.battle.net/account/user?access_token=' + token)
+    open('log.txt', 'a').write(response.text)
+    me_json = json.loads(response.text)
+    return me_json
+
+
 
 @app.route('/login_reddit')
 def login_reddit():
@@ -124,8 +182,8 @@ def login_reddit():
         'scope': 'identity'
     }
     import urllib
-    redir_uri = 'https://ssl.reddit.com/api/v1/authorize?' + urllib.urlencode(params)
-    return redirect(redir_uri)
+    redir_url = 'https://ssl.reddit.com/api/v1/authorize?' + urllib.urlencode(params)
+    return redirect(redir_url)
 
 @app.route('/callback_reddit')
 def callback_reddit():
