@@ -37,7 +37,17 @@ app.config.update(dict(
 
     BNET_CLIENT_ID='',
     BNET_CLIENT_SECRET='',
-    BNET_REDIRECT_URI='https://localhost:5000/callback_bnet'
+    BNET_REDIRECT_URI='https://localhost:5000/callback_bnet',
+
+    OW_RANKS={
+        'Bronze'     : 1,
+        'Silver'     : 1500,
+        'Gold'       : 2000,
+        'Platinum'   : 2500,
+        'Diamond'    : 3000,
+        'Master'     : 3500,
+        'Grandmaster': 4000
+    }
 ))
 
 # overwrite config from environment vars if they've been set 
@@ -100,14 +110,24 @@ def show_status():
     and session.get('bnet_user') and session.get('bnet_user_id'):
         # if we have both handles 
         # get the skill rank from playoverwatch
-        # and write them to the database
-        True
+        try:
+            session['sr'] = int(playoverwatch_get_skillrating(session.get('bnet_user'), 'eu'))
+        except:
+            session['sr'] = None
 
+    # flair is send after user flair selection and form submit
+    # to '/set_flair'
     return render_template('show_status.html', status={
         'session_dump': str(session),
         'bnet_user': session.get('bnet_user'),
-        'reddit_user': session.get('reddit_user')
-        })
+        'reddit_user': session.get('reddit_user'),
+        'sr': session.get('sr'),
+        'ranks': [ (rank, min_sr) \
+                    for rank, min_sr \
+                    in app.config['OW_RANKS'].items() \
+                    if session.get('sr') >= min_sr \
+                 ]
+    })
 
 
 @app.route('/logout')
@@ -115,6 +135,12 @@ def logout():
     session.clear()
     return redirect(url_for('show_status'))
 
+def is_valid_state(state):
+    if state == session.get('reddit_oauth_state'):
+        return True
+    return False
+
+# battle.net OAuth begin #
 @app.route('/login_bnet')
 def login_bnet():
     from uuid import uuid4
@@ -164,9 +190,9 @@ def bnet_get_user(token):
     open('log.txt', 'a').write(response.text)
     me_json = json.loads(response.text)
     return me_json
+# battle.net OAuth end #
 
-
-
+# reddit.com OAuth begin #
 @app.route('/login_reddit')
 def login_reddit():
     from uuid import uuid4
@@ -200,12 +226,6 @@ def callback_reddit():
         session['reddit_token'] = token
     return redirect(url_for('show_status'))
 
-def is_valid_state(state):
-    # haha jokes on me, this need to be done but for testing should work with return True
-    if state == session.get('reddit_oauth_state'):
-        return True
-    return False
-
 def reddit_access_token_from_code(code):
     client_auth = requests.auth.HTTPBasicAuth(app.config['REDDIT_CLIENT_ID'], app.config['REDDIT_CLIENT_SECRET'])
     post_data = {
@@ -227,9 +247,28 @@ def reddit_get_user(token):
     open('log.txt', 'a').write(response.text)
     me_json = json.loads(response.text)
     return me_json
+# reddit.com OAuth end #
 
+# playoverwatch.com SkillRating-Scraper begin #
+def playoverwatch_get_skillrating(battletag, region):
+    import re
+    url='https://playoverwatch.com/de-de/career/pc/%s/%s' % (region, battletag.replace('#', '-'))
+    resp = requests.get(url)
+    xpr = '<div class="u-align-center h6">(\d+)</div>'
+    m = re.search(xpr, resp.text)
+    return m.group(1)
+# playoverwatch.com SkillRating-Scraper end #
 
-
+@app.route('/set_flair', methods=['POST'])
+def set_flair(args):
+    selected_rank = request.args.get('rank')
+    skill_rank = session.get('sr')
+    ranks = app.config['OW_RANKS']
+    if skill_rank >= ranks[selected_rank]:
+        #check db for dupes
+        #if no duped write db entry
+        #call reddit-api to set modflair
+        True
 
 
 
