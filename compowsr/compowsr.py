@@ -13,15 +13,18 @@
 import os
 import sqlite3
 import json
+import urllib
 import requests
 import requests.auth
+import praw
+import datetime
+from uuid import uuid4
 from flask import Flask, request, session, g, redirect, url_for, abort, \
     render_template, flash
 
 # initialize application instance
 app = Flask(__name__)
 
-# load conf from this file
 app.config.from_object(__name__)
 
 # default config to load
@@ -31,9 +34,17 @@ app.config.update(dict(
     USERNAME='fnord',
     PASSWORD='fnord',
 
+    PRAW_CLIENT_ID='',
+    PRAW_CLIENT_SECRET='',
+    PRAW_USERNAME='',
+    PRAW_PASSWORD='',
+    PRAW_SUBREDDIT_NAME='',
+    PRAW_USER_AGENT='compowsr by /u/Witchtower_',
+
     REDDIT_CLIENT_ID='',
     REDDIT_CLIENT_SECRET='',
     REDDIT_REDIRECT_URI='https://localhost:5000/callback_reddit',
+    REDDIT_USER_AGENT='compowsr by /u/Witchtower_',
 
     BNET_CLIENT_ID='',
     BNET_CLIENT_SECRET='',
@@ -153,7 +164,6 @@ def login_bnet():
         'response_type': 'code',
         'auth_flow': 'auth_code'
     }
-    import urllib
     redir_url = 'https://eu.battle.net/oauth/authorize?' + urllib.urlencode(params)
     return redirect(redir_url)
 
@@ -195,7 +205,6 @@ def bnet_get_user(token):
 # reddit.com OAuth begin #
 @app.route('/login_reddit')
 def login_reddit():
-    from uuid import uuid4
     # we need to save the state somewhere for future use
     state = str(uuid4())
     session['reddit_oauth_state'] = state
@@ -207,7 +216,6 @@ def login_reddit():
         'duration': 'temporary',
         'scope': 'identity'
     }
-    import urllib
     redir_url = 'https://ssl.reddit.com/api/v1/authorize?' + urllib.urlencode(params)
     return redirect(redir_url)
 
@@ -260,19 +268,92 @@ def playoverwatch_get_skillrating(battletag, region):
 # playoverwatch.com SkillRating-Scraper end #
 
 @app.route('/set_flair', methods=['POST'])
-def set_flair(args):
-    selected_rank = request.args.get('rank')
+def set_flair():
+    selected_rank = request.form.get('rank')
     skill_rank = session.get('sr')
     ranks = app.config['OW_RANKS']
+
     if skill_rank >= ranks[selected_rank]:
-        #check db for dupes
-        #if no duped write db entry
-        #call reddit-api to set modflair
-        True
+        # check db for existing usage of bnet account
+        db = get_db()
+        query = """
+        SELECT 
+            emc.exact_match AS exact_match,
+            dre.different_reddit_acc AS different_reddit_acc
+        FROM 
+            (
+                SELECT
+                    COUNT(bnet_id) AS exact_match
+                FROM
+                    acc_links
+                WHERE
+                    bnet_id = ?
+                    AND reddit_id = ?
+            
+            ) AS emc,
+            (
+                SELECT
+                    COUNT(bnet_id) as different_reddit_acc
+                FROM
+                    acc_links
+                WHERE
+                    bnet_id = ?
+                    AND NOT reddit_id = ?
+            ) AS dre
+        """
+        cur = db.execute(query, [
+            session.get('bnet_user_id'),
+            session.get('reddit_user_id'),
+            session.get('bnet_user_id'),
+            session.get('reddit_user_id')
+            ])
+        row = cur.fetchone()
 
+        #if no duplicates write db entry
+        if row['exact_match'] < 1 and row['different_reddit_acc'] < 1:
+            query = "INSERT INTO acc_links (bnet_id, reddit_id, last_update, last_rank) VALUES (?, ?, ?, ?)"
+            db.execute(query, [
+                    session.get('bnet_user_id'), 
+                    session.get('reddit_user_id'), 
+                    datetime.datetime.now(), 
+                    session.get('sr')   ])
+            db.commit()
+                
+            # and call reddit-api to set modflair
+            ok = praw_set_reddit_user_flair(session.get('reddit_user'), selected_rank.lower())
+            flash("We've successfully set your user flair on /r/competitiveoverwatch to '%s'." % selected_rank)
+            return redirect(url_for('show_status'))
+        elif row['exact_match'] > 0 and row['different_reddit_acc'] < 1:
+            statement = """
+            UPDATE acc_links 
+            SET last_update = ?, last_rank = ? 
+            WHERE bnet_id = ?  AND reddit_id = ?"""
+            db.execute(statement, [
+                datetime.datetime.now(), 
+                session.get('sr'), 
+                session.get('bnet_user_id'), 
+                session.get('reddit_user_id')   ])
+            db.commit()
+            ok = praw_set_user_flair(session.get('reddit_user'), selected_rank.lower())
+            flash("We've successfully updated your user flair on /r/competitiveoverwatch to '%s'." % selected_rank)
+            return redirect(url_for('show_status'))
 
+        # if we're here there is already another reddit account linked with the bnet acc
+        flash("You can only set the flair for <b>one</b> reddit account with a single battle.net account. Sadly, the feature to remove the flair from the old acc is not yet implemented.")
+        return redirect(url_for('show_status'))
 
+    flash("Either I made a mistake while programming (shame on me) or you're trying to trick the program... shame on you.")
+    return redirect(url_for('show_status'))
 
-
+def praw_set_user_flair(user, flair):
+    ok = True
+    try:
+        # the user_agent is overridden by the praw.ini
+        reddit = praw.Reddit(app.config['PRAW_SITE_NAME'], user_agent='test by /u/Witchtower_')
+        subreddit = reddit.subreddit(app.config['PRAW_SUBREDDIT_NAME']) 
+        subreddit.flair.set(user, css_class=flair)
+    except:
+        ok = False
+    return ok
 
 

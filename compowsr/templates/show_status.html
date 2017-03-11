@@ -2,7 +2,7 @@
 
 {% block content %}
 
-    <p> {{ status.session_dump }} </p>
+    {# <p> {{ status.session_dump }} </p> #}
 
 
     {% if status.bnet_user %}
@@ -33,13 +33,14 @@
 
         <p>sr: {{ status.sr }}</p>
 
-        <form method="get" action="{{url_for('set_flair')}}">
+        <form method="POST" action="{{url_for('set_flair')}}">
 
             {% for rank, min_sr in status.ranks %}
                 {% if min_sr <= status.sr %}
 
-                    <label>{{rank}}</label>
-                    <input type="radio" name="rank" value="{{rank}}">
+                <input id="{{rank}}" type="radio" name="rank" value="{{rank}}">
+                <label for="{{rank}}">{{rank}}</label>
+                <br>
 
                 {% endif %}
             {% endfor %}
