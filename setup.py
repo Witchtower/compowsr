@@ -4,5 +4,5 @@ setup(
     name='compowsr',
     packages=['compowsr'],
     include_package_data=True,
-    install_packages=['flask']
+    install_packages=['flask', 'praw']
 )
