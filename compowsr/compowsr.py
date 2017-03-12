@@ -31,8 +31,6 @@ app.config.from_object(__name__)
 app.config.update(dict(
     DATABASE=os.path.join(app.root_path, 'compowsr.db'),
     SECRET_KEY='fnord',
-    USERNAME='fnord',
-    PASSWORD='fnord',
 
     PRAW_CLIENT_ID='',
     PRAW_CLIENT_SECRET='',
