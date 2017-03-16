@@ -8,9 +8,9 @@ It is a website that asks the user to log in with both:
 
 It then looks up the skillrating of the battle.net account
 ~~and offers the user a selection of rank user flairs(bronze-grandmaster) for the subreddit
-that depends on the skillrating.
+that depends on the skillrating.~~
 
-The user chooses a flair which is then set for him.~~
+~~The user chooses a flair which is then set for him.~~
 
 And sets the highest possible flair for the user.
 
