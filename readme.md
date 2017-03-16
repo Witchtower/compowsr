@@ -29,7 +29,7 @@ You need:
  - a reddit 'personal use script' app for api access to this moderator account
  - a reddit 'web app' app for oauth (go to preferences\>apps)
  - put all the client id's and secrets into a config:
-```python2
+```python
 # just random stuff to encrypt the cookie with... the more the better
 SECRET_KEY='fnarlaskfhöalhföäalsdhfaölsdkhflölkjjjjj'
 
