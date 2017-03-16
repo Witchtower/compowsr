@@ -7,13 +7,17 @@ It is a website that asks the user to log in with both:
  - and a reddit account
 
 It then looks up the skillrating of the battle.net account
-and offers the user a selection of rank user flairs(bronze-grandmaster) for the subreddit
+~~and offers the user a selection of rank user flairs(bronze-grandmaster) for the subreddit
 that depends on the skillrating.
 
-The user chooses a flair which is then set for him.
+The user chooses a flair which is then set for him.~~
+
+And sets the highest possible flair for the user.
+
+You will also be able to add a cronjob to update the flair for all users in the subreddit that have one of the rank-flairs set. Be careful with how often you do this, this puts a quite substantial load on playoverwatch.com if you have enough people.
 
 ### Current Status
-In development. I advise to not yet use this.
+In development. I advise to not yet use this, since it might not do exactly what it says in this readme.
 
 ### Installation for testing
 You need:
@@ -25,7 +29,7 @@ You need:
  - a reddit 'personal use script' app for api access to this moderator account
  - a reddit 'web app' app for oauth (go to preferences\>apps)
  - put all the client id's and secrets into a config:
-```
+```python2
 # just random stuff to encrypt the cookie with... the more the better
 SECRET_KEY='fnarlaskfhöalhföäalsdhfaölsdkhflölkjjjjj'
 
@@ -55,7 +59,7 @@ C:\Users\Vann\projects\compowsr> pip install --editable .
 ```
  - edit the `C:\Users\Vann\projects\compowsr\start.py` to point to your certificate and key
  - set (or export) the following environment variables 
-```
+```bash
 set FLASK_APP=compowsr
 set FLASK_DEBUG=true
 set COMPOWSR_SETTINGS=<full path to your config file>
