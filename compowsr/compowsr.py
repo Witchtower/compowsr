@@ -49,13 +49,13 @@ app.config.update(dict(
     BNET_REDIRECT_URI='https://localhost:5000/callback_bnet',
 
     OW_RANKS={
-        'Bronze'     : 1,
-        'Silver'     : 1500,
-        'Gold'       : 2000,
-        'Platinum'   : 2500,
-        'Diamond'    : 3000,
-        'Master'     : 3500,
-        'Grandmaster': 4000
+        'bronze'     : 1,
+        'silver'     : 1500,
+        'gold'       : 2000,
+        'platinum'   : 2500,
+        'diamond'    : 3000,
+        'master'     : 3500,
+        'grandmaster': 4000
     }
 ))
 
@@ -92,14 +92,14 @@ def initdb_command():
     print('Initialized the database.')
 # end of database initialization
 
-# ###### #
-# ROUTES #
-# ###### #
-
+# this is the only route that actually shows something to the user. 
+# everything else just does whatever it's supposed to do and then it
+# redirects here.
 @app.route('/', methods=['GET'])
 def show_status():
 
     if session.get('bnet_token') and not session.get('bnet_user'):
+        # get username from bnet
         try:
             user = bnet_get_user(session.get('bnet_token'))
             session['bnet_user'] = user['battletag']
@@ -108,6 +108,7 @@ def show_status():
             session['bnet_user'] = None
 
     if session.get('reddit_token') and not session.get('reddit_user'):
+        # get username from reddit
         try:
             user = reddit_get_user(session.get('reddit_token'))
             session['reddit_user'] = user['name'] 
@@ -117,25 +118,18 @@ def show_status():
 
     if session.get('reddit_user') and session.get('reddit_user_id') \
     and session.get('bnet_user') and session.get('bnet_user_id'):
-        # if we have both handles 
         # get the skill rank from playoverwatch
         try:
             session['sr'] = int(playoverwatch_get_skillrating(session.get('bnet_user'), 'eu'))
         except:
             session['sr'] = None
 
-    # flair is send after user flair selection and form submit
-    # to '/set_flair'
+    # template has to check if 'sr' is True and offer a link to url_for('set_flair') in that case
     return render_template('show_status.html', status={
         'session_dump': str(session),
         'bnet_user': session.get('bnet_user'),
         'reddit_user': session.get('reddit_user'),
-        'sr': session.get('sr'),
-        'ranks': [ (rank, min_sr) \
-                    for rank, min_sr \
-                    in app.config['OW_RANKS'].items() \
-                    if session.get('sr') >= min_sr \
-                 ]
+        'sr': session.get('sr')
     })
 
 
@@ -265,45 +259,37 @@ def playoverwatch_get_skillrating(battletag, region):
     return m.group(1)
 # playoverwatch.com SkillRating-Scraper end #
 
+# praw set rank flair
 @app.route('/set_flair', methods=['POST'])
 def set_flair():
-    selected_rank = request.form.get('rank')
+    # prettier names for stuff
+    bnet_user_name = session.get('bnet_user_name')
+    reddit_user_name = session.get('reddit_user_name')
     skill_rank = session.get('sr')
     ranks = app.config['OW_RANKS']
 
-    if skill_rank >= ranks[selected_rank]:
+    # make sure we have everything we need
+    if not bnet_user_name:
+        flash('You have to log in with reddit.')
+        return redirect(url_for('show_status'))
+
+    if not reddit_user_name:
+        flash('You have to log in with battle.net.')
+        return redirect(url_for('show_status'))
+
+    if not skill_rank:
+        flash('It seems we cannot find your rank on you profilepage. Maybe playoverwatch.com is down? Or they changed something with the website... please pm /u/Witchtower_ on reddit so I can fix this.')
+        return redirect(url_for('show_status'))
+
+    # here we start doing stuff 
+    if skill_rank and reddit_user_name and :
         # check db for existing usage of bnet account
         db = get_db()
         query = """
-        SELECT 
-            emc.exact_match AS exact_match,
-            dre.different_reddit_acc AS different_reddit_acc
-        FROM 
-            (
-                SELECT
-                    COUNT(bnet_id) AS exact_match
-                FROM
-                    acc_links
-                WHERE
-                    bnet_id = ?
-                    AND reddit_id = ?
-            
-            ) AS emc,
-            (
-                SELECT
-                    COUNT(bnet_id) as different_reddit_acc
-                FROM
-                    acc_links
-                WHERE
-                    bnet_id = ?
-                    AND NOT reddit_id = ?
-            ) AS dre
+        SELECT count(bnet_id) FROM acc_link WHERE bnet_id = ?
         """
         cur = db.execute(query, [
-            session.get('bnet_user_id'),
-            session.get('reddit_user_id'),
-            session.get('bnet_user_id'),
-            session.get('reddit_user_id')
+            session.get('bnet_user_id')
             ])
         row = cur.fetchone()
 
@@ -342,6 +328,11 @@ def set_flair():
 
     flash("Either I made a mistake while programming (shame on me) or you're trying to trick the program... shame on you.")
     return redirect(url_for('show_status'))
+
+# def praw_get_user_flair(user):
+#     reddit = praw.Reddit(app.config['PRAW_SITE_NAME'], user_agent='test by /u/Witchtower_')
+#     subreddit = reddit.subreddit(app.config['PRAW_SUBREDDIT_NAME'])
+#     subreddit.
 
 def praw_set_user_flair(user, flair):
     ok = True
