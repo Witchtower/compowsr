@@ -260,79 +260,163 @@ def playoverwatch_get_skillrating(battletag, region):
 # playoverwatch.com SkillRating-Scraper end #
 
 # praw set rank flair
-@app.route('/set_flair', methods=['POST'])
+""" to help you understand the logic of what happens here:
+        bnet    reddit  new_sr      action
+============================================
+CaseX   =       =       <=          nothing (obviously you won't find this case in the code)
+
+Case1   =       =       >           update skill_rank in db
+                                    set reddit flair
+
+Case3   =       !=      ?           remove reddit flair (from old account)
+                                    update reddit_id and skill_rank in db
+                                    set reddit flair (for new reddit account)
+
+Case2   !=      =       ?           update bnet_id and skill_rank in db
+                                    set reddit flair
+
+Case0   !=      !=      ?           insert bnet_id, reddit_id, skill_rank in db
+                                    set reddit_flair
+"""
+
+
+@app.route('/set_flair')
 def set_flair():
     # prettier names for stuff
-    bnet_user_name = session.get('bnet_user_name')
-    reddit_user_name = session.get('reddit_user_name')
+    bnet_user_name = session.get('bnet_user')
+    bnet_user_id = session.get('bnet_user_id')
+    reddit_user_name = session.get('reddit_user')
+    reddit_user_id = session.get('reddit_user_id')
     skill_rank = session.get('sr')
     ranks = app.config['OW_RANKS']
 
     # make sure we have everything we need
-    if not bnet_user_name:
-        flash('You have to log in with reddit.')
+    if not ( bnet_user_name and bnet_user_id ):
+        flash('Aw, Rubbish! You have to log in with reddit.')
         return redirect(url_for('show_status'))
 
-    if not reddit_user_name:
-        flash('You have to log in with battle.net.')
+    if not ( reddit_user_name and reddit_user_id ):
+        flash('Aw, Rubbish! You have to log in with battle.net.')
         return redirect(url_for('show_status'))
 
-    if not skill_rank:
-        flash('It seems we cannot find your rank on you profilepage. Maybe playoverwatch.com is down? Or they changed something with the website... please pm /u/Witchtower_ on reddit so I can fix this.')
+    if not ( skill_rank and type(skill_rank) == int ):
+        flash('It seems we cannot find your rank on you profilepage. \
+                Maybe playoverwatch.com is down? Or they changed something with the website... \
+                please pm /u/Witchtower_ on reddit so I can fix this.')
         return redirect(url_for('show_status'))
 
     # here we start doing stuff 
-    if skill_rank and reddit_user_name and :
-        # check db for existing usage of bnet account
-        db = get_db()
-        query = """
-        SELECT count(bnet_id) FROM acc_link WHERE bnet_id = ?
-        """
-        cur = db.execute(query, [
-            session.get('bnet_user_id')
-            ])
-        row = cur.fetchone()
+    db = get_db()
 
-        #if no duplicates write db entry
-        if row['exact_match'] < 1 and row['different_reddit_acc'] < 1:
-            query = "INSERT INTO acc_links (bnet_id, reddit_id, last_update, last_rank) VALUES (?, ?, ?, ?)"
-            db.execute(query, [
-                    session.get('bnet_user_id'), 
-                    session.get('reddit_user_id'), 
-                    datetime.datetime.now(), 
-                    session.get('sr')   ])
-            db.commit()
-                
-            # and call reddit-api to set modflair
-            ok = praw_set_reddit_user_flair(session.get('reddit_user'), selected_rank.lower())
-            flash("We've successfully set your user flair on /r/competitiveoverwatch to '%s'." % selected_rank)
-            return redirect(url_for('show_status'))
-        elif row['exact_match'] > 0 and row['different_reddit_acc'] < 1:
-            statement = """
-            UPDATE acc_links 
-            SET last_update = ?, last_rank = ? 
-            WHERE bnet_id = ?  AND reddit_id = ?"""
-            db.execute(statement, [
-                datetime.datetime.now(), 
-                session.get('sr'), 
-                session.get('bnet_user_id'), 
-                session.get('reddit_user_id')   ])
-            db.commit()
-            ok = praw_set_user_flair(session.get('reddit_user'), selected_rank.lower())
-            flash("We've successfully updated your user flair on /r/competitiveoverwatch to '%s'." % selected_rank)
+    # check if accounts exist in db
+    db_cursor = db.execute("SELECT * FROM acc_links WHERE bnet_id = ? OR reddit_id = ?", \
+                                                         [bnet_user_id,  reddit_user_id])
+    db_row = db_cursor.fetchone() 
+    # None if no entry, can't be multiple because of unique index over acc_links(bnet_id, reddit_id)
+
+    if not db_row: # no entry for either account, just insert + set flair
+# start /Case0/
+        try:
+            with db:
+                db.execute("INSERT INTO acc_links ( \
+                                bnet_id, bnet_name, \
+                                reddit_id, reddit_name, \
+                                last_rank, last_update) \
+                            VALUES (?, ?, ?, ?, ?, ?)", \
+                            (   bnet_user_id, bnet_user_name, \
+                                reddit_user_id, reddit_user_name, \
+                                skill_rank, datetime.datetime.now() )\
+                          )
+        except:
+            flash('Aw, Rubbish! Couldn\'t write to database. (/Case0/)')
             return redirect(url_for('show_status'))
 
-        # if we're here there is already another reddit account linked with the bnet acc
-        flash("You can only set the flair for <b>one</b> reddit account with a single battle.net account. Sadly, the feature to remove the flair from the old acc is not yet implemented.")
-        return redirect(url_for('show_status'))
+        else: # no exception occured, we can assume everything is in the db
+            # select flair to set for the skill rank
+            new_flair = "bronze" #TODO
+            # set flair
+            praw_set_user_flair(reddit_user_name, new_flair)
+# end /Case0/
 
-    flash("Either I made a mistake while programming (shame on me) or you're trying to trick the program... shame on you.")
+    elif db_row['bnet_id'] == bnet_user_id \
+           and db_row['reddit_id'] == reddit_user_id \
+           and db_row['last_rank'] < skill_rank:
+# start /Case1/
+        try:
+            with db:
+                db.execute("UPDATE acc_links SET \
+                                last_rank = ?, last_update = ? \
+                            WHERE bnet_id = ? AND reddit_id = ?",\
+                            (skill_rank, datetime.datetime.now(), \
+                                 bnet_user_id, reddit_user_id) \
+                          )
+        except:
+            flash('Aw, Rubbish! Couldn\'t write to database.(/Case1/)')
+            return redirect(url_for('show_status'))
+        else:
+            new_flair = "bronze" #TODO
+            praw_set_user_flair(reddit_user_name, new_flair)
+# end /Case1/
+        
+    elif db_row['bnet_id'] != bnet_user_id and db_row['reddit_id'] == reddit_user_id:
+# start /Case2/
+        try:
+            with db:
+                db.execute("UPDATE acc_links SET \
+                                bnet_id = ?, bnet_name = ?, \
+                                last_rank = ?, last_update = ? \
+                            WHERE reddit_id = ?", \
+                            (bnet_user_id, bnet_user_name, \
+                                skill_rank, datetime.datetime.now(), \
+                             reddit_user_id)
+                          )
+        except:
+            flash('Aw, Rubbish! Couldn\'t write to database. (/Case2/)')
+            return redirect(url_for('show_status'))
+        else:
+            new_flair = "bronze" #TODO
+            praw_set_user_flair(reddit_user_name, new_flair)
+# end /Case2/
+
+    elif db_row['reddit_id'] != reddit_user_id and db_row['bnet_id'] == bnet_user_id:
+# start /Case3/
+        # unset flair for old reddit account
+        if is_rank_flair(praw_get_user_flair(db_row['reddit_name'])):
+            praw_set_user_flair(db_row['reddit_name'], "")
+        # update reddit account and skill rating in database
+        try:
+            with db:
+                db.execute("UPDATE acc_links SET \
+                                reddit_id = ?, reddit_name = ?, \
+                                skill_rank = ?, last_update = ? \
+                            WHERE bnet_id = ?", \
+                            (   reddit_user_id, reddit_user_name, \
+                                skill_rank, datetime.datetime.now(), \
+                             bnet_user_id )
+                           )
+        except:
+            flash('Aw, Rubbish! Couldn\'t write database. (/Case3/)')
+            return redirect(url_for('show_status'))
+        else:
+            # set reddit flair
+            new_flair = "bronze" #TODO
+            praw_set_user_flair(reddit_user_name, new_flair)
+# end /Case3/
+
+    flash('You got it! Everythings done I think.')
     return redirect(url_for('show_status'))
 
-# def praw_get_user_flair(user):
-#     reddit = praw.Reddit(app.config['PRAW_SITE_NAME'], user_agent='test by /u/Witchtower_')
-#     subreddit = reddit.subreddit(app.config['PRAW_SUBREDDIT_NAME'])
-#     subreddit.
+def is_rank_flair(flair):
+    ranks = app.config['OW_RANKS']
+    if flair in ranks.keys():
+        return True
+    return False
+
+def praw_get_user_flair(user):
+    reddit = praw.Reddit(app.config['PRAW_SITE_NAME'], user_agent='test by /u/Witchtower_')
+    subreddit = reddit.subreddit(app.config['PRAW_SUBREDDIT_NAME'])
+    flair = subreddit.flair.get(redditor=user)
+    return flair
 
 def praw_set_user_flair(user, flair):
     ok = True
