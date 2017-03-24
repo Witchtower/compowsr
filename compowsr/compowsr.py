@@ -263,7 +263,7 @@ def playoverwatch_get_skillrating(battletag, region):
 """ to help you understand the logic of what happens here:
         bnet    reddit  new_sr      action
 ============================================
-CaseX   =       =       <=          nothing (obviously you won't find this case in the code)
+CaseX   =       =       <=          nothing
                                     set reddit flair
 
 Case1   =       =       >           update skill_rank in db
@@ -278,6 +278,7 @@ Case2   !=      =       ?           update bnet_id and skill_rank in db
 
 Case0   !=      !=      ?           insert bnet_id, reddit_id, skill_rank in db
                                     set reddit_flair
+set reddit flair in every case, put below
 """
 
 
@@ -345,7 +346,7 @@ def set_flair():
                                  bnet_user_id, reddit_user_id) \
                           )
         except:
-            flash('Aw, Rubbish! Couldn\'t write to database.(/Case1/)')
+            flash('Aw, Rubbish! Couldn\'t write to database. (/Case1/)')
             return redirect(url_for('show_status'))
             
 # end /Case1/
@@ -392,7 +393,7 @@ def set_flair():
     new_flair = get_flair_for_sr(sr)
     praw_set_user_flair(reddit_user_name, new_flair)
 
-    flash('You got it! Everythings done I think. %s' % (new_flair))
+    flash('You got it! Your flair is now set to %s.' % (new_flair.upper()))
     return redirect(url_for('show_status'))
 
 def is_rank_flair(flair):
@@ -419,11 +420,10 @@ def praw_set_user_flair(user, flair):
     return ok
 
 def get_flair_for_sr(sr):
-    #TODO
     ranks = app.config['OW_RANKS']
-    res = ("unranked", 0)
+    res = ("", 0)
     for rank in ranks.items():
         if rank[1] <= sr and rank[1] > res[1]:
             res = rank
-    return rank[0]
+    return res[0]
         
