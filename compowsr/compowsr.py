@@ -264,6 +264,7 @@ def playoverwatch_get_skillrating(battletag, region):
         bnet    reddit  new_sr      action
 ============================================
 CaseX   =       =       <=          nothing (obviously you won't find this case in the code)
+                                    set reddit flair
 
 Case1   =       =       >           update skill_rank in db
                                     set reddit flair
@@ -287,9 +288,7 @@ def set_flair():
     bnet_user_id = session.get('bnet_user_id')
     reddit_user_name = session.get('reddit_user')
     reddit_user_id = session.get('reddit_user_id')
-    skill_rank = session.get('sr')
-    ranks = app.config['OW_RANKS']
-
+    sr = session.get('sr')
     # make sure we have everything we need
     if not ( bnet_user_name and bnet_user_id ):
         flash('Aw, Rubbish! You have to log in with reddit.')
@@ -299,8 +298,8 @@ def set_flair():
         flash('Aw, Rubbish! You have to log in with battle.net.')
         return redirect(url_for('show_status'))
 
-    if not ( skill_rank and type(skill_rank) == int ):
-        flash('It seems we cannot find your rank on you profilepage. \
+    if not ( sr and type(sr) == int ):
+        flash('It seems we cannot find your rank on your profilepage. \
                 Maybe playoverwatch.com is down? Or they changed something with the website... \
                 please pm /u/Witchtower_ on reddit so I can fix this.')
         return redirect(url_for('show_status'))
@@ -325,37 +324,30 @@ def set_flair():
                             VALUES (?, ?, ?, ?, ?, ?)", \
                             (   bnet_user_id, bnet_user_name, \
                                 reddit_user_id, reddit_user_name, \
-                                skill_rank, datetime.datetime.now() )\
+                                sr, datetime.datetime.now() )\
                           )
         except:
             flash('Aw, Rubbish! Couldn\'t write to database. (/Case0/)')
             return redirect(url_for('show_status'))
 
-        else: # no exception occured, we can assume everything is in the db
-            # select flair to set for the skill rank
-            new_flair = "bronze" #TODO
-            # set flair
-            praw_set_user_flair(reddit_user_name, new_flair)
 # end /Case0/
 
     elif db_row['bnet_id'] == bnet_user_id \
            and db_row['reddit_id'] == reddit_user_id \
-           and db_row['last_rank'] < skill_rank:
+           and db_row['last_rank'] < sr:
 # start /Case1/
         try:
             with db:
                 db.execute("UPDATE acc_links SET \
                                 last_rank = ?, last_update = ? \
                             WHERE bnet_id = ? AND reddit_id = ?",\
-                            (skill_rank, datetime.datetime.now(), \
+                            (sr, datetime.datetime.now(), \
                                  bnet_user_id, reddit_user_id) \
                           )
         except:
             flash('Aw, Rubbish! Couldn\'t write to database.(/Case1/)')
             return redirect(url_for('show_status'))
-        else:
-            new_flair = "bronze" #TODO
-            praw_set_user_flair(reddit_user_name, new_flair)
+            
 # end /Case1/
         
     elif db_row['bnet_id'] != bnet_user_id and db_row['reddit_id'] == reddit_user_id:
@@ -367,15 +359,13 @@ def set_flair():
                                 last_rank = ?, last_update = ? \
                             WHERE reddit_id = ?", \
                             (bnet_user_id, bnet_user_name, \
-                                skill_rank, datetime.datetime.now(), \
+                                sr, datetime.datetime.now(), \
                              reddit_user_id)
                           )
         except:
             flash('Aw, Rubbish! Couldn\'t write to database. (/Case2/)')
             return redirect(url_for('show_status'))
-        else:
-            new_flair = "bronze" #TODO
-            praw_set_user_flair(reddit_user_name, new_flair)
+
 # end /Case2/
 
     elif db_row['reddit_id'] != reddit_user_id and db_row['bnet_id'] == bnet_user_id:
@@ -388,22 +378,21 @@ def set_flair():
             with db:
                 db.execute("UPDATE acc_links SET \
                                 reddit_id = ?, reddit_name = ?, \
-                                skill_rank = ?, last_update = ? \
+                                last_rank = ?, last_update = ? \
                             WHERE bnet_id = ?", \
                             (   reddit_user_id, reddit_user_name, \
-                                skill_rank, datetime.datetime.now(), \
+                                sr, datetime.datetime.now(), \
                              bnet_user_id )
                            )
         except:
             flash('Aw, Rubbish! Couldn\'t write database. (/Case3/)')
             return redirect(url_for('show_status'))
-        else:
-            # set reddit flair
-            new_flair = "bronze" #TODO
-            praw_set_user_flair(reddit_user_name, new_flair)
-# end /Case3/
 
-    flash('You got it! Everythings done I think.')
+# end /Case3/
+    new_flair = get_flair_for_sr(sr)
+    praw_set_user_flair(reddit_user_name, new_flair)
+
+    flash('You got it! Everythings done I think. %s' % (new_flair))
     return redirect(url_for('show_status'))
 
 def is_rank_flair(flair):
@@ -429,4 +418,12 @@ def praw_set_user_flair(user, flair):
         ok = False
     return ok
 
-
+def get_flair_for_sr(sr):
+    #TODO
+    ranks = app.config['OW_RANKS']
+    res = ("unranked", 0)
+    for rank in ranks.items():
+        if rank[1] <= sr and rank[1] > res[1]:
+            res = rank
+    return rank[0]
+        
