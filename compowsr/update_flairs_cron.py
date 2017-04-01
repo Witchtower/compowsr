@@ -12,6 +12,15 @@ import praw
 from flask import Config
 # from compowsr import 
 
+
+def get_flair_for_sr(sr):
+    ranks = config['OW_RANKS']
+    res = ("", 0)
+    for rank in ranks.items():
+        if rank[1] <= sr and rank[1] > res[1]:
+            res = rank
+    return res[0]
+
 def is_rank_flair(flair):
     ranks = config['OW_RANKS']
     if flair in ranks.keys():
@@ -36,19 +45,21 @@ def update_sr(battletag, region):
     global db
     db.execute("UPDATE app_links SET \
                         last_rank = ?, \
-                        last_update = datetime('now'),
-                    WHERE bnet_user = ?", [sr, battletag])
+                        last_update = datetime('now'), \
+                    WHERE bnet_name = ?", [sr, battletag])
+    
     return sr
 
 
 
 config = Config(__name__)
+
 config.from_envvar('COMPOWSR_SETTINGS', silent=True)
 
 # here it begins
 
 # get reddit users with rank flair set
-
+print "getting all users with rank-flair from reddit"
 reddit = praw.Reddit(config['PRAW_SITE_NAME'], user_agent='flair_updater by /u/Witchtower')
 subreddit = reddit.subreddit(config['PRAW_SUBREDDIT_NAME'])
 to_update = [
@@ -56,6 +67,7 @@ to_update = [
         for user in subreddit.flair() 
         if is_rank_flair(user['flair_css_class'])
         ]
+print "got %i users with a rank flair" % len(to_update)
 
 # check who really needs to be updated
 
@@ -63,20 +75,28 @@ db = connect_db()
 
 to_update_usernames = [i[0] for i in to_update]
 
-cursor = db.execute("SELECT * FROM acc_links \
-                WHERE reddit_user IN (%s) \
-                    AND last_update > datetime('now', '+14 days')'" \
-                        % ','.join('?'*len(to_update_usernames)), to_update_usernames)
-
+print "db lookup if any of them haven't been updated in the last 14 days"
+statement = "SELECT * FROM acc_links " #\
+                        #% ','.join(['?']*len(to_update_usernames))
+# AND last_update > datetime('now', '+14 days')" \
+print statement
+print to_update_usernames
+cursor = db.execute(statement)#, to_update_usernames)
 to_update2 = cursor.fetchall()
+print "%i users haven't been updated in the last 14 days" % len(to_update2)
+
 
 for row in to_update2:
+    # pull sr and update in db
     sr = update_sr(row['bnet_name'], 'eu')
-    
+    flair = get_flair_for_sr(sr)
+    subreddit.flair.set(user, css_class=flair)
+    print "flair '%s' set for '%s'" % (flair, user)
 
 
 
 
+print "all done"
 
 
 
