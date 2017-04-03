@@ -290,6 +290,11 @@ def set_flair():
     reddit_user_name = session.get('reddit_user')
     reddit_user_id = session.get('reddit_user_id')
     sr = session.get('sr')
+
+    # initialize praw_user_flair
+    reddit = praw.Reddit(app.config['PRAW_SITE_NAME'], user_agent='test by /u/Witchtower_')
+    praw_user_flair = reddit.subreddit(app.config['PRAW_SUBREDDIT_NAME']).flair
+
     # make sure we have everything we need
     if not ( bnet_user_name and bnet_user_id ):
         flash('Aw, Rubbish! You have to log in with reddit.')
@@ -302,7 +307,7 @@ def set_flair():
     if not ( sr and type(sr) == int ):
         flash('It seems we cannot find your rank on your profilepage. \
                 Maybe playoverwatch.com is down? Or they changed something with the website... \
-                please pm /u/Witchtower_ on reddit so I can fix this.')
+                please pm me (/u/Witchtower_) on reddit so I can fix this.')
         return redirect(url_for('show_status'))
 
     # here we start doing stuff 
@@ -372,8 +377,8 @@ def set_flair():
     elif db_row['reddit_id'] != reddit_user_id and db_row['bnet_id'] == bnet_user_id:
 # start /Case3/
         # unset flair for old reddit account
-        if is_rank_flair(praw_get_user_flair(db_row['reddit_name'])):
-            praw_set_user_flair(db_row['reddit_name'], "")
+        if praw_user_flair.get(redditor=db_row['reddit_name']) in config['OW_RANKS'].keys():
+            praw_user_flair.set(db_row['reddit_name'], css_class="")
         # update reddit account and skill rating in database
         try:
             with db:
@@ -390,37 +395,13 @@ def set_flair():
             return redirect(url_for('show_status'))
 
 # end /Case3/
-    new_flair = get_flair_for_sr(sr)
-    praw_set_user_flair(reddit_user_name, new_flair)
+    new_flair = get_flair_for_sr(sr, app.config['OW_RANKS'])
+    praw_user_flair.set(reddit_user_name, css_class=new_flair)
 
     flash('You got it! Your flair is now set to %s.' % (new_flair.upper()))
     return redirect(url_for('show_status'))
 
-def is_rank_flair(flair):
-    ranks = app.config['OW_RANKS']
-    if flair in ranks.keys():
-        return True
-    return False
-
-def praw_get_user_flair(user):
-    reddit = praw.Reddit(app.config['PRAW_SITE_NAME'], user_agent='test by /u/Witchtower_')
-    subreddit = reddit.subreddit(app.config['PRAW_SUBREDDIT_NAME'])
-    flair = subreddit.flair.get(redditor=user)
-    return flair
-
-def praw_set_user_flair(user, flair):
-    ok = True
-    try:
-        # the user_agent is overridden by the praw.ini
-        reddit = praw.Reddit(app.config['PRAW_SITE_NAME'], user_agent='test by /u/Witchtower_')
-        subreddit = reddit.subreddit(app.config['PRAW_SUBREDDIT_NAME']) 
-        subreddit.flair.set(user, css_class=flair)
-    except:
-        ok = False
-    return ok
-
-def get_flair_for_sr(sr):
-    ranks = app.config['OW_RANKS']
+def get_flair_for_sr(sr, ranks):
     res = ("", 0)
     for rank in ranks.items():
         if rank[1] <= sr and rank[1] > res[1]:
