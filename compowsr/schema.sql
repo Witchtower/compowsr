@@ -6,7 +6,7 @@ create table acc_links (
     reddit_id varchar not null,
     reddit_name varchar not null,
     last_update date not null,
-    last_rank integer not null
+    last_rank varchar not null
 );
 create unique index idx_bnet        on acc_links(bnet_id);
 create unique index idx_reddit      on acc_links(reddit_id);

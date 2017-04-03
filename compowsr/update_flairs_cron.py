@@ -8,10 +8,9 @@
 
 import sqlite3
 import praw
+import playoverwatch
 
 from flask import Config
-# from compowsr import 
-
 
 def get_flair_for_sr(sr):
     ranks = config['OW_RANKS']
@@ -21,84 +20,63 @@ def get_flair_for_sr(sr):
             res = rank
     return res[0]
 
-def is_rank_flair(flair):
-    ranks = config['OW_RANKS']
-    if flair in ranks.keys():
-        return True
-    return False
-
-def connect_db():
+def connect_db(config):
     rv = sqlite3.connect(config['DATABASE'])
     rv.row_factory = sqlite3.Row
     return rv
 
-def playoverwatch_get_skillrating(battletag, region):
-    import re
-    url='https://playoverwatch.com/de-de/career/pc/%s/%s' % (region, battletag.replace('#', '-'))
-    resp = requests.get(url)
-    xpr = '<div class="u-align-center h6">(\d+)</div>'
-    m = re.search(xpr, resp.text)
-    return m.group(1)
+def main():
+    config = Config(__name__)
 
-def update_sr(battletag, region):
-    sr = playoverwatch_get_skillrating(battletag, region)
-    global db
-    db.execute("UPDATE app_links SET \
-                        last_rank = ?, \
-                        last_update = datetime('now'), \
-                    WHERE bnet_name = ?", [sr, battletag])
-    
-    return sr
+    config.from_envvar('COMPOWSR_SETTINGS', silent=True)
 
+    # get the praw stuff
+    reddit = praw.Reddit(config['PRAW_SITE_NAME'], user_agent='flair_updater by /u/Witchtower')
+    subreddit = reddit.subreddit(config['PRAW_SUBREDDIT_NAME'])
 
+    # get reddit users with rank flair set
+    print "getting all users with rank-flair from reddit"
 
-config = Config(__name__)
+    to_update = [
+            (user['user'].name, user['flair_css_class'])
+            for user in subreddit.flair() 
+            if user['flair_css_class'] in config['OW_RANKS'].keys()
+            ]
 
-config.from_envvar('COMPOWSR_SETTINGS', silent=True)
+    print "got %i users with a rank flair" % len(to_update)
 
-# here it begins
+    # check who really needs to be updated
+    db = connect_db(config)
 
-# get reddit users with rank flair set
-print "getting all users with rank-flair from reddit"
-reddit = praw.Reddit(config['PRAW_SITE_NAME'], user_agent='flair_updater by /u/Witchtower')
-subreddit = reddit.subreddit(config['PRAW_SUBREDDIT_NAME'])
-to_update = [
-        (user['user'].name, user['flair_css_class'])
-        for user in subreddit.flair() 
-        if is_rank_flair(user['flair_css_class'])
-        ]
-print "got %i users with a rank flair" % len(to_update)
+    to_update_usernames = [i[0] for i in to_update]
 
-# check who really needs to be updated
-
-db = connect_db()
-
-to_update_usernames = [i[0] for i in to_update]
-
-print "db lookup if any of them haven't been updated in the last 14 days"
-statement = "SELECT * FROM acc_links " #\
-                        #% ','.join(['?']*len(to_update_usernames))
-# AND last_update > datetime('now', '+14 days')" \
-print statement
-print to_update_usernames
-cursor = db.execute(statement)#, to_update_usernames)
-to_update2 = cursor.fetchall()
-print "%i users haven't been updated in the last 14 days" % len(to_update2)
+    statement = "SELECT * FROM acc_links " #\
+                            #% ','.join(['?']*len(to_update_usernames))
+    # AND last_update > datetime('now', '+14 days')" \
+    print statement
+    print to_update_usernames
+    cursor = db.execute(statement)#, to_update_usernames)
+    to_update2 = cursor.fetchall()
+    print "%i users haven't been updated in the last 14 days" % len(to_update2)
 
 
-for row in to_update2:
-    # pull sr and update in db
-    sr = update_sr(row['bnet_name'], 'eu')
-    flair = get_flair_for_sr(sr)
-    subreddit.flair.set(user, css_class=flair)
-    print "flair '%s' set for '%s'" % (flair, user)
+    for row in to_update2:
+        # pull sr and update in db
+        new_rank = playoverwatch.CareerProfile('eu', row['bnet_name']).rank
+        db.execute("UPDATE acc_links SET \
+                            last_rank = ?, \
+                            last_update = datetime('now') \
+                        WHERE bnet_name = ?", [new_rank, row['bnet_name']])
+        subreddit.flair.set(row['reddit_name'], css_class=new_rank)
+        print "flair '%s' set for '%s'" % (new_rank, row['reddit_name'])
 
 
 
 
-print "all done"
+    print "all done"
 
-
+if __name__ == "__main__":
+    main()
 
 
 
