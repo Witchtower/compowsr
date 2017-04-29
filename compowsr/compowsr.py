@@ -11,6 +11,7 @@
 # ##################################################################### #
 
 import os
+import sys
 import sqlite3
 import json
 import urllib
@@ -21,6 +22,10 @@ import datetime
 from uuid import uuid4
 from flask import Flask, request, session, g, redirect, url_for, abort, \
     render_template, flash
+
+# this removes the "not enough entropy" error
+from cryptography.hazmat.backends.openssl.backend import backend
+backend.activate_builtin_random()
 
 # initialize application instance
 app = Flask(__name__)
@@ -105,6 +110,7 @@ def show_status():
             session['bnet_user'] = user['battletag']
             session['bnet_user_id'] = user['id']
         except:
+            print >> sys.stderr, "show_status -> bnet_get_user failed to get user"
             session['bnet_user'] = None
 
     if session.get('reddit_token') and not session.get('reddit_user'):
@@ -114,6 +120,7 @@ def show_status():
             session['reddit_user'] = user['name'] 
             session['reddit_user_id'] = user['id']
         except:
+            print >> sys.stderr, "show_status -> reddit_get_user failed to get user"
             session['reddit_user'] = None
 
     if session.get('reddit_user') and session.get('reddit_user_id') \
@@ -189,7 +196,6 @@ def bnet_access_token_from_code(code):
 
 def bnet_get_user(token):
     response = requests.get('https://eu.api.battle.net/account/user?access_token=' + token)
-    open('log.txt', 'a').write(response.text)
     me_json = json.loads(response.text)
     return me_json
 # battle.net OAuth end #
@@ -233,18 +239,31 @@ def reddit_access_token_from_code(code):
         'code': code,
         'redirect_uri': app.config['REDDIT_REDIRECT_URI']
     }
-    response = requests.post('https://ssl.reddit.com/api/v1/access_token', auth=client_auth, data=post_data)
+    headers = requests.utils.default_headers()
+    headers.update({
+        'User-Agent': app.config['REDDIT_USER_AGENT']
+    })
+    response = requests.post(
+        'https://ssl.reddit.com/api/v1/access_token',
+        headers=headers,
+        auth=client_auth,
+        data=post_data
+    )
     token_json = response.json()
+    if token_json.has_key('error'):
+	msg = "Unknown error."
+        if token_json.has_key('message'):
+            msg = token_json['message']
+        flash("Something went wrong with reddit: %s %s" % (token_json.get('error',''), msg ))
     if token_json.has_key('access_token'):
         return token_json['access_token']
     return None
 
 def reddit_get_user(token):
-    headers = {
-        'Authorization': 'bearer ' + token
-    }
+    headers = requests.utils.default_headers()
+    headers.update({'Authorization': 'bearer ' + token})
+    headers.update({'User-Agent': app.config['REDDIT_USER_AGENT']})
     response = requests.get('https://oauth.reddit.com/api/v1/me', headers=headers)
-    open('log.txt', 'a').write(response.text)
     me_json = json.loads(response.text)
     return me_json
 # reddit.com OAuth end #
