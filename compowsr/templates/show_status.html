@@ -4,6 +4,7 @@
 
     {# <p> {{ status.session_dump }} </p> #}
 
+    <p class="warning">THIS IS A TEST INSTALLATION, NOT WORKING FOR THE REAL SUBREDDIT!</p>
     <h1>CompOwSr</h1>
     <p class="small"><b>Comp</b>etitive <b>O</b>ver<b>w</b>atch <b>S</b>kill<b>r</b>ank verification</p>
     <p>
@@ -22,13 +23,22 @@
     </p>
     <hr>
 
-    {% if status.bnet_user %}
+    <a href="{{ url_for('logout') }}">logout</a>
 
-    <p>bnet: {{ status.bnet_user }}</p>
+    {% if status.bnet_user and status.region %}
+
+    <p>bnet: {{ status.bnet_user }} ({{ status.region }})</p>
 
     {% else %}
 
-        <p>bnet: <a href="{{ url_for('login_bnet') }}">pls login</a></p>
+        <p>
+            bnet: 
+            <a href="{{ url_for('login_bnet_us') }}">US</a>
+            <a href="{{ url_for('login_bnet_eu') }}">EU</a>
+            <a href="{{ url_for('login_bnet_kr') }}">KR</a>
+            <a href="{{ url_for('login_bnet_tw') }}">TW</a>
+            <a href="{{ url_for('login_bnet_cn') }}">CN</a>
+        </p>
 
     {% endif %}
 
