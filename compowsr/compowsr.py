@@ -11,7 +11,6 @@
 # ##################################################################### #
 
 import os
-import sys
 import sqlite3
 import json
 import urllib
@@ -20,12 +19,9 @@ import requests.auth
 import praw
 import datetime
 from uuid import uuid4
+from playoverwatch import CareerProfile
 from flask import Flask, request, session, g, redirect, url_for, abort, \
     render_template, flash
-
-# this removes the "not enough entropy" error
-from cryptography.hazmat.backends.openssl.backend import backend
-backend.activate_builtin_random()
 
 # initialize application instance
 app = Flask(__name__)
@@ -110,8 +106,13 @@ def show_status():
             session['bnet_user'] = user['battletag']
             session['bnet_user_id'] = user['id']
         except:
-            print >> sys.stderr, "show_status -> bnet_get_user failed to get user"
             session['bnet_user'] = None
+
+    if session.get('reddit_token') and not session.get('reddit_user'):
+        # get username from reddit
+        try:
+            user = reddit_get_user(session.get('reddit_token'))
+            session['reddit_user'] = user['name'] 
 
     if session.get('reddit_token') and not session.get('reddit_user'):
         # get username from reddit
@@ -127,16 +128,18 @@ def show_status():
     and session.get('bnet_user') and session.get('bnet_user_id'):
         # get the skill rank from playoverwatch
         try:
-            session['sr'] = int(playoverwatch_get_skillrating(session.get('bnet_user'), 'eu'))
+            cp = CareerProfile('eu', session.get('bnet_user'))
+            session['rank'] = cp.rank
+            # session['sr'] = int(playoverwatch_get_skillrating(session.get('bnet_user'), 'eu'))
         except:
-            session['sr'] = None
+            session['rank'] = None
 
     # template has to check if 'sr' is True and offer a link to url_for('set_flair') in that case
     return render_template('show_status.html', status={
         'session_dump': str(session),
         'bnet_user': session.get('bnet_user'),
         'reddit_user': session.get('reddit_user'),
-        'sr': session.get('sr')
+        'sr': session.get('rank')
     })
 
 
@@ -308,7 +311,7 @@ def set_flair():
     bnet_user_id = session.get('bnet_user_id')
     reddit_user_name = session.get('reddit_user')
     reddit_user_id = session.get('reddit_user_id')
-    sr = session.get('sr')
+    sr = session.get('rank')
 
     # initialize praw_user_flair
     reddit = praw.Reddit(app.config['PRAW_SITE_NAME'], user_agent='test by /u/Witchtower_')
@@ -399,25 +402,6 @@ def set_flair():
         if praw_user_flair.get(redditor=db_row['reddit_name']) in config['OW_RANKS'].keys():
             praw_user_flair.set(db_row['reddit_name'], css_class="")
         # update reddit account and skill rating in database
-        try:
-            with db:
-                db.execute("UPDATE acc_links SET \
-                                reddit_id = ?, reddit_name = ?, \
-                                last_rank = ?, last_update = ? \
-                            WHERE bnet_id = ?", \
-                            (   reddit_user_id, reddit_user_name, \
-                                sr, datetime.datetime.now(), \
-                             bnet_user_id )
-                           )
-        except:
-            flash('Aw, Rubbish! Couldn\'t write database. (/Case3/)')
-            return redirect(url_for('show_status'))
-
-# end /Case3/
-    new_flair = get_flair_for_sr(sr, app.config['OW_RANKS'])
-    praw_user_flair.set(reddit_user_name, css_class=new_flair)
-
-    flash('You got it! Your flair is now set to %s.' % (new_flair.upper()))
     return redirect(url_for('show_status'))
 
 def get_flair_for_sr(sr, ranks):
