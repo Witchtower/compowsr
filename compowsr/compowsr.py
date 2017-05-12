@@ -99,10 +99,10 @@ def initdb_command():
 @app.route('/', methods=['GET'])
 def show_status():
 
-    if session.get('bnet_token') and not session.get('bnet_user'):
+    if session.get('bnet_token') and session.get('region') and not session.get('bnet_user'):
         # get username from bnet
         try:
-            user = bnet_get_user(session.get('bnet_token'))
+            user = bnet_get_user(session.get('region'), session.get('bnet_token'))
             session['bnet_user'] = user['battletag']
             session['bnet_user_id'] = user['id']
         except:
@@ -125,6 +125,7 @@ def show_status():
             session['reddit_user'] = None
 
     if session.get('reddit_user') and session.get('reddit_user_id') \
+    and session.get('region') \
     and session.get('bnet_user') and session.get('bnet_user_id'):
         # get the skill rank from playoverwatch
         try:
@@ -132,12 +133,15 @@ def show_status():
             session['rank'] = cp.rank
             # session['sr'] = int(playoverwatch_get_skillrating(session.get('bnet_user'), 'eu'))
         except:
+            url='https://playoverwatch.com/de-de/career/pc/%s/%s' % (session.get('region'), session.get('bnet_user').replace('#', '-'))
+            flash('We can\'t find your Rank at "%s". Please check for yourself if your rank and sr is visible on that page, and if it is: message /u/Witchtower_ on reddit so he can fix this.' %(url))
             session['rank'] = None
 
     # template has to check if 'sr' is True and offer a link to url_for('set_flair') in that case
     return render_template('show_status.html', status={
         'session_dump': str(session),
         'bnet_user': session.get('bnet_user'),
+        'region': session.get('region'),
         'reddit_user': session.get('reddit_user'),
         'sr': session.get('rank')
     })
@@ -154,8 +158,34 @@ def is_valid_state(state):
     return False
 
 # battle.net OAuth begin #
-@app.route('/login_bnet')
-def login_bnet():
+# regions:
+@app.route('/login_bnet_us')
+def login_bnet_us():
+    session['region'] = 'us'
+    return login_bnet('https://us.battle.net/oauth/authorize')
+
+@app.route('/login_bnet_eu')
+def login_bnet_eu():
+    session['region'] = 'eu'
+    return login_bnet('https://eu.battle.net/oauth/authorize')
+
+@app.route('/login_bnet_kr')
+def login_bnet_kr():
+    session['region'] = 'kr'
+    return login_bnet('https://kr.battle.net/oauth/authorize')
+
+@app.route('/login_bnet_tw')
+def login_bnet_tw():
+    session['region'] = 'tw'
+    return login_bnet('https://tw.battle.net/oauth/authorize')
+
+@app.route('/login_bnet_cn')
+def login_bnet_cn():
+    session['region'] = 'cn'
+    return login_bnet('https://www.battlenet.com.cn/oauth/authorize')
+
+# @app.route('/login_bnet')
+def login_bnet(region_uri):
     from uuid import uuid4
     state = str(uuid4())
     session['bnet_oauth_state'] = state
@@ -166,7 +196,7 @@ def login_bnet():
         'response_type': 'code',
         'auth_flow': 'auth_code'
     }
-    redir_url = 'https://eu.battle.net/oauth/authorize?' + urllib.urlencode(params)
+    redir_url = region_uri + '?' + urllib.urlencode(params)
     return redirect(redir_url)
 
 @app.route('/callback_bnet')
@@ -178,12 +208,18 @@ def callback_bnet():
     if not session.get('bnet_oauth_state') == state:
         abort(403)
     code = request.args.get('code')
-    token = bnet_access_token_from_code(code)
+
+    token = None
+    if session['region'] in ['eu', 'us', 'kr', 'tw']:
+        token = bnet_access_token_from_code('https://<region>.battle.net/oauth/token'.replace('<region>', session['region']), code)
+    elif session['region'] == 'cn':
+        token = bnet_access_token_from_code('https://www.battlenet.com.cn/oauth/token', code)
+
     if token:
         session['bnet_token'] = token
     return redirect(url_for('show_status'))
 
-def bnet_access_token_from_code(code):
+def bnet_access_token_from_code(token_uri, code):
     client_auth = requests.auth.HTTPBasicAuth(app.config['BNET_CLIENT_ID'], app.config['BNET_CLIENT_SECRET'])
     post_data = {
         'grant_type': 'authorization_code',
@@ -191,14 +227,19 @@ def bnet_access_token_from_code(code):
         'code': code,
         'redirect_uri': app.config['BNET_REDIRECT_URI']
     }
-    response = requests.post('https://eu.battle.net/oauth/token', auth=client_auth, data=post_data)
+    response = requests.post(token_uri, auth=client_auth, data=post_data)
     token_json = response.json()
     if token_json.has_key('access_token'):
         return token_json['access_token']
     return None
 
-def bnet_get_user(token):
-    response = requests.get('https://eu.api.battle.net/account/user?access_token=' + token)
+def bnet_get_user(region, token):
+    if region != 'cn':
+        rq_uri = 'https://<region>.api.battle.net/account/user?access_token='.replace('<region>', region)
+    else:
+        rq_uri = 'https://www.battlenet.com.cn/account/user?access_token='
+        
+    response = requests.get(rq_uri + token)
     me_json = json.loads(response.text)
     return me_json
 # battle.net OAuth end #
@@ -309,6 +350,7 @@ def set_flair():
     # prettier names for stuff
     bnet_user_name = session.get('bnet_user')
     bnet_user_id = session.get('bnet_user_id')
+    region = session.get('region')
     reddit_user_name = session.get('reddit_user')
     reddit_user_id = session.get('reddit_user_id')
     sr = session.get('rank')
@@ -318,7 +360,7 @@ def set_flair():
     praw_user_flair = reddit.subreddit(app.config['PRAW_SUBREDDIT_NAME']).flair
 
     # make sure we have everything we need
-    if not ( bnet_user_name and bnet_user_id ):
+    if not ( bnet_user_name and bnet_user_id and region):
         flash('Aw, Rubbish! You have to log in with reddit.')
         return redirect(url_for('show_status'))
 
@@ -336,8 +378,8 @@ def set_flair():
     db = get_db()
 
     # check if accounts exist in db
-    db_cursor = db.execute("SELECT * FROM acc_links WHERE bnet_id = ? OR reddit_id = ?", \
-                                                         [bnet_user_id,  reddit_user_id])
+    db_cursor = db.execute("SELECT * FROM acc_links WHERE (bnet_id = ? AND bnet_region = ?) OR reddit_id = ?", \
+                                                         [bnet_user_id, region,  reddit_user_id])
     db_row = db_cursor.fetchone() 
     # None if no entry, can't be multiple because of unique index over acc_links(bnet_id, reddit_id)
 
@@ -346,11 +388,11 @@ def set_flair():
         try:
             with db:
                 db.execute("INSERT INTO acc_links ( \
-                                bnet_id, bnet_name, \
+                                bnet_id, bnet_name, bnet_region,\
                                 reddit_id, reddit_name, \
                                 last_rank, last_update) \
-                            VALUES (?, ?, ?, ?, ?, ?)", \
-                            (   bnet_user_id, bnet_user_name, \
+                            VALUES (?, ?, ?, ?, ?, ?, ?)", \
+                            (   bnet_user_id, bnet_user_name, region, \
                                 reddit_user_id, reddit_user_name, \
                                 sr, datetime.datetime.now() )\
                           )
@@ -368,9 +410,9 @@ def set_flair():
             with db:
                 db.execute("UPDATE acc_links SET \
                                 last_rank = ?, last_update = ? \
-                            WHERE bnet_id = ? AND reddit_id = ?",\
+                            WHERE bnet_id = ? AND bnet_region = ? AND reddit_id = ?",\
                             (sr, datetime.datetime.now(), \
-                                 bnet_user_id, reddit_user_id) \
+                                 bnet_user_id, region, reddit_user_id) \
                           )
         except:
             flash('Aw, Rubbish! Couldn\'t write to database. (/Case1/)')
@@ -383,10 +425,10 @@ def set_flair():
         try:
             with db:
                 db.execute("UPDATE acc_links SET \
-                                bnet_id = ?, bnet_name = ?, \
+                                bnet_id = ?, bnet_name = ?, bnet_region = ?, \
                                 last_rank = ?, last_update = ? \
                             WHERE reddit_id = ?", \
-                            (bnet_user_id, bnet_user_name, \
+                            (bnet_user_id, bnet_user_name, region, \
                                 sr, datetime.datetime.now(), \
                              reddit_user_id)
                           )
@@ -402,6 +444,25 @@ def set_flair():
         if praw_user_flair.get(redditor=db_row['reddit_name']) in config['OW_RANKS'].keys():
             praw_user_flair.set(db_row['reddit_name'], css_class="")
         # update reddit account and skill rating in database
+        try:
+            with db:
+                db.execute("UPDATE acc_links SET \
+                                reddit_id = ?, reddit_name = ?, \
+                                last_rank = ?, last_update = ? \
+                            WHERE bnet_id = ? AND bnet_region = ?", \
+                            (   reddit_user_id, reddit_user_name, \
+                                sr, datetime.datetime.now(), \
+                             bnet_user_id, region )
+                           )
+        except:
+            flash('Aw, Rubbish! Couldn\'t write database. (/Case3/)')
+            return redirect(url_for('show_status'))
+
+# end /Case3/
+    new_flair = get_flair_for_sr(sr, app.config['OW_RANKS'])
+    praw_user_flair.set(reddit_user_name, css_class=new_flair)
+
+    flash('You got it! Your flair is now set to %s.' % (new_flair.upper()))
     return redirect(url_for('show_status'))
 
 def get_flair_for_sr(sr, ranks):
