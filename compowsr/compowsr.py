@@ -347,6 +347,7 @@ def set_flair():
     # prettier names for stuff
     bnet_user_name = session.get('bnet_user')
     bnet_user_id = session.get('bnet_user_id')
+    region = session.get('region')
     reddit_user_name = session.get('reddit_user')
     reddit_user_id = session.get('reddit_user_id')
     sr = session.get('sr')
@@ -356,7 +357,7 @@ def set_flair():
     praw_user_flair = reddit.subreddit(app.config['PRAW_SUBREDDIT_NAME']).flair
 
     # make sure we have everything we need
-    if not ( bnet_user_name and bnet_user_id ):
+    if not ( bnet_user_name and bnet_user_id and region):
         flash('Aw, Rubbish! You have to log in with reddit.')
         return redirect(url_for('show_status'))
 
@@ -374,8 +375,8 @@ def set_flair():
     db = get_db()
 
     # check if accounts exist in db
-    db_cursor = db.execute("SELECT * FROM acc_links WHERE bnet_id = ? OR reddit_id = ?", \
-                                                         [bnet_user_id,  reddit_user_id])
+    db_cursor = db.execute("SELECT * FROM acc_links WHERE (bnet_id = ? AND bnet_region = ?) OR reddit_id = ?", \
+                                                         [bnet_user_id, region,  reddit_user_id])
     db_row = db_cursor.fetchone() 
     # None if no entry, can't be multiple because of unique index over acc_links(bnet_id, reddit_id)
 
@@ -384,11 +385,11 @@ def set_flair():
         try:
             with db:
                 db.execute("INSERT INTO acc_links ( \
-                                bnet_id, bnet_name, \
+                                bnet_id, bnet_name, bnet_region,\
                                 reddit_id, reddit_name, \
                                 last_rank, last_update) \
-                            VALUES (?, ?, ?, ?, ?, ?)", \
-                            (   bnet_user_id, bnet_user_name, \
+                            VALUES (?, ?, ?, ?, ?, ?, ?)", \
+                            (   bnet_user_id, bnet_user_name, region, \
                                 reddit_user_id, reddit_user_name, \
                                 sr, datetime.datetime.now() )\
                           )
@@ -406,9 +407,9 @@ def set_flair():
             with db:
                 db.execute("UPDATE acc_links SET \
                                 last_rank = ?, last_update = ? \
-                            WHERE bnet_id = ? AND reddit_id = ?",\
+                            WHERE bnet_id = ? AND bnet_region = ? AND reddit_id = ?",\
                             (sr, datetime.datetime.now(), \
-                                 bnet_user_id, reddit_user_id) \
+                                 bnet_user_id, region, reddit_user_id) \
                           )
         except:
             flash('Aw, Rubbish! Couldn\'t write to database. (/Case1/)')
@@ -421,10 +422,10 @@ def set_flair():
         try:
             with db:
                 db.execute("UPDATE acc_links SET \
-                                bnet_id = ?, bnet_name = ?, \
+                                bnet_id = ?, bnet_name = ?, bnet_region = ?, \
                                 last_rank = ?, last_update = ? \
                             WHERE reddit_id = ?", \
-                            (bnet_user_id, bnet_user_name, \
+                            (bnet_user_id, bnet_user_name, region, \
                                 sr, datetime.datetime.now(), \
                              reddit_user_id)
                           )
@@ -445,10 +446,10 @@ def set_flair():
                 db.execute("UPDATE acc_links SET \
                                 reddit_id = ?, reddit_name = ?, \
                                 last_rank = ?, last_update = ? \
-                            WHERE bnet_id = ?", \
+                            WHERE bnet_id = ? AND bnet_region = ?", \
                             (   reddit_user_id, reddit_user_name, \
                                 sr, datetime.datetime.now(), \
-                             bnet_user_id )
+                             bnet_user_id, region )
                            )
         except:
             flash('Aw, Rubbish! Couldn\'t write database. (/Case3/)')
