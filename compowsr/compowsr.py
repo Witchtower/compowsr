@@ -23,10 +23,16 @@ from playoverwatch import CareerProfile
 from flask import Flask, request, session, g, redirect, url_for, abort, \
     render_template, flash
 
+# this removes the "not enough entropy" error
+from cryptography.hazmat.backends.openssl.backend import backend
+backend.activate_builtin_random()
+
+
 # initialize application instance
 app = Flask(__name__)
 
 app.config.from_object(__name__)
+
 
 # default config to load
 app.config.update(dict(
@@ -107,12 +113,6 @@ def show_status():
             session['bnet_user_id'] = user['id']
         except:
             session['bnet_user'] = None
-
-    if session.get('reddit_token') and not session.get('reddit_user'):
-        # get username from reddit
-        try:
-            user = reddit_get_user(session.get('reddit_token'))
-            session['reddit_user'] = user['name'] 
 
     if session.get('reddit_token') and not session.get('reddit_user'):
         # get username from reddit
@@ -353,7 +353,7 @@ def set_flair():
     region = session.get('region')
     reddit_user_name = session.get('reddit_user')
     reddit_user_id = session.get('reddit_user_id')
-    sr = session.get('rank')
+    rank = session.get('rank')
 
     # initialize praw_user_flair
     reddit = praw.Reddit(app.config['PRAW_SITE_NAME'], user_agent='test by /u/Witchtower_')
@@ -368,7 +368,7 @@ def set_flair():
         flash('Aw, Rubbish! You have to log in with battle.net.')
         return redirect(url_for('show_status'))
 
-    if not ( sr and type(sr) == int ):
+    if not ( rank ):
         flash('It seems we cannot find your rank on your profilepage. \
                 Maybe playoverwatch.com is down? Or they changed something with the website... \
                 please pm me (/u/Witchtower_) on reddit so I can fix this.')
@@ -394,7 +394,7 @@ def set_flair():
                             VALUES (?, ?, ?, ?, ?, ?, ?)", \
                             (   bnet_user_id, bnet_user_name, region, \
                                 reddit_user_id, reddit_user_name, \
-                                sr, datetime.datetime.now() )\
+                                rank, datetime.datetime.now() )\
                           )
         except:
             flash('Aw, Rubbish! Couldn\'t write to database. (/Case0/)')
@@ -404,18 +404,19 @@ def set_flair():
 
     elif db_row['bnet_id'] == bnet_user_id \
            and db_row['reddit_id'] == reddit_user_id \
-           and db_row['last_rank'] < sr:
+           and db_row['last_rank'] < rank:
 # start /Case1/
         try:
             with db:
                 db.execute("UPDATE acc_links SET \
                                 last_rank = ?, last_update = ? \
                             WHERE bnet_id = ? AND bnet_region = ? AND reddit_id = ?",\
-                            (sr, datetime.datetime.now(), \
+                            (rank, datetime.datetime.now(), \
                                  bnet_user_id, region, reddit_user_id) \
                           )
-        except:
+        except sqlite3.Error as err:
             flash('Aw, Rubbish! Couldn\'t write to database. (/Case1/)')
+            sys.stderr.write(str(err)+'\n')
             return redirect(url_for('show_status'))
             
 # end /Case1/
@@ -429,7 +430,7 @@ def set_flair():
                                 last_rank = ?, last_update = ? \
                             WHERE reddit_id = ?", \
                             (bnet_user_id, bnet_user_name, region, \
-                                sr, datetime.datetime.now(), \
+                                rank, datetime.datetime.now(), \
                              reddit_user_id)
                           )
         except:
@@ -451,7 +452,7 @@ def set_flair():
                                 last_rank = ?, last_update = ? \
                             WHERE bnet_id = ? AND bnet_region = ?", \
                             (   reddit_user_id, reddit_user_name, \
-                                sr, datetime.datetime.now(), \
+                                rank, datetime.datetime.now(), \
                              bnet_user_id, region )
                            )
         except:
@@ -459,16 +460,8 @@ def set_flair():
             return redirect(url_for('show_status'))
 
 # end /Case3/
-    new_flair = get_flair_for_sr(sr, app.config['OW_RANKS'])
-    praw_user_flair.set(reddit_user_name, css_class=new_flair)
+    praw_user_flair.set(reddit_user_name, css_class=rank)
 
-    flash('You got it! Your flair is now set to %s.' % (new_flair.upper()))
+    flash('You got it! Your flair is now set to %s.' % (rank.upper()))
     return redirect(url_for('show_status'))
 
-def get_flair_for_sr(sr, ranks):
-    res = ("", 0)
-    for rank in ranks.items():
-        if rank[1] <= sr and rank[1] > res[1]:
-            res = rank
-    return res[0]
-        
