@@ -1,6 +1,8 @@
 # compowsr
 **comp**etetive **o**ver**w**atch **s**kill**r**ank verification
 
+*abondoned*
+
 ### What it does:
 It is a website that asks the user to log in with both:
  - a battle.net account
@@ -31,7 +33,7 @@ You need:
  - put all the client id's and secrets into a config:
 ```python
 # just random stuff to encrypt the cookie with... the more the better
-SECRET_KEY='fnarlaskfhöalhföäalsdhfaölsdkhflölkjjjjj'
+SECRET_KEY='fnarlaskfhÃ¶alhfÃ¶Ã¤alsdhfaÃ¶lsdkhflÃ¶lkjjjjj'
 
 # reddit web app
 REDDIT_CLIENT_ID=''
