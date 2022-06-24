@@ -1,7 +1,7 @@
 # compowsr
 **comp**etetive **o**ver**w**atch **s**kill**r**ank verification
 
-*abondoned*
+*abandoned*
 
 ### What it does:
 It is a website that asks the user to log in with both:
